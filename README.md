@@ -1,98 +1,190 @@
-# roscomvpn-geo-sync
+<h1 align=center>Авто-зеркало <code>geoip.dat</code> / <code>geosite.dat</code> + авто-обновление routing-deeplinks в <code>Remnawave</code></h1>
 
-[![Docker Hub](https://img.shields.io/docker/v/grandvan/roscomvpn-geo-sync?label=docker%20hub&sort=semver)](https://hub.docker.com/r/grandvan/roscomvpn-geo-sync)
-[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+> **Собственное зеркало** geo-файлов от [hydraponique/roscomvpn-*](https://github.com/hydraponique) для VPN-инфры на Xray-ядре (INCY, Happ) и **автоматическое обновление** routing-deeplinks в Remnawave-панели через API
 
-Собственное зеркало `geoip.dat` / `geosite.dat` от [hydraponique/roscomvpn-*](https://github.com/hydraponique) + автоматическая генерация и обновление routing-deeplinks для клиентов **INCY** и **Happ** в Remnawave-панели.
+<p align=center>Данный репозиторий был создан и поддерживается в связи с тем, что <b>Роскомнадзор</b> начал блокировать GitHub и его CDN. VPN-клиенты на Xray-ядре (INCY, Happ) используют geo-файлы для split-tunneling — без них маршрутизация ломается. Этот сервис позволяет раздавать geo-файлы с собственного домена и автоматически обновлять routing-deeplinks в Remnawave-панели.</p>
 
-## Зачем
+---
 
-В 2026 году Роскомнадзор начал блокировать GitHub и его CDN. VPN-клиенты на Xray-ядре (INCY, Happ) используют geo-файлы для split-tunneling: какие домены гнать через VPN, какие напрямую. Если geo-файлы стали недоступны — маршрутизация ломается.
+## 🚀 Возможности
 
-Этот сервис каждые 12 часов:
-1. Скачивает свежие geo-файлы (с GitHub Releases по sha256, с fallback на jsDelivr).
-2. Опционально — пушит их на ваш сервер через rsync, чтобы вы могли раздавать с собственного домена из российского IP-пространства.
-3. Опционально — собирает routing-deeplinks (INCY + Happ) из upstream `JSONSUB.JSON` с подменой URL'ов на ваш домен и автоматически применяет их через Remnawave API.
+- ✅ Скачивание `geoip.dat` и `geosite.dat` с GitHub Releases и проверкой sha256
+- ✅ Fallback на jsDelivr с проверкой размера и magic byte при недоступности GitHub
+- ✅ Атомарная замена локального кэша (старая версия не теряется при сбое)
+- ✅ Загрузка свежих файлов на удалённый сервер раздачи через rsync (опционально)
+- ✅ Health-check публичного URL раздачи после rsync (опционально)
+- ✅ Автоматическая генерация routing-deeplinks для INCY и Happ из upstream `JSONSUB.JSON`
+- ✅ Автоматический PATCH `/api/subscription-settings` в Remnawave: правило INCY Routing + поле Happ Routing (опционально)
+- ✅ Вывод готовых deeplinks в логи — для ручной вставки в панель если автоматизация отключена
+- ✅ Telegram-уведомления о результатах каждого запуска (✅ OK / ⚠️ used fallback / ❌ FAILED)
+- ✅ Регулярное выполнение по cron-расписанию (настраивается через `.env`)
+- ✅ Валидация конфигурации при старте
+- ✅ Автоматические повторы при сбоях сети (tenacity)
+- ✅ Подробное логирование
 
-Если не настраивать rsync и Remnawave API — deeplinks просто выводятся в лог, оттуда их можно скопировать в панель вручную.
+## 📋 Требования
 
-## Что делает
+- Docker
+- (опционально) Удалённый сервер с настроенным rsync для раздачи geo-файлов с собственного домена
+- (опционально) Remnawave-панель + API-токен для автоматического PATCH deeplinks
+- (опционально) Telegram-бот для уведомлений
 
-| Фаза | Действие | Опциональность |
-|---|---|---|
-| 1a | Скачивает `geoip.dat` + `geosite.dat` с проверкой sha256 (GitHub Releases). Fallback — jsDelivr с проверкой размера + magic byte. | обязательно |
-| 1b | Заливает свежие файлы на удалённый сервер через rsync + health-check публичного URL. | если задан `RSYNC_HOST` |
-| 2a | Скачивает `INCY/JSONSUB.JSON` и `HAPP/JSONSUB.JSON` из `hydraponique/roscomvpn-routing`. Заменяет URL geo-файлов на ваш домен. Кодирует base64. Выводит deeplinks в лог. | обязательно |
-| 2b | PATCH `/api/subscription-settings` в Remnawave: обновляет правило INCY Routing в Response Rules + поле Happ Routing. | если задан `REMNAWAVE_API_URL` + `REMNAWAVE_API_TOKEN` |
-| Alert | Telegram-сообщение со сводкой каждый запуск (✅ OK / ⚠️ used fallback / ❌ FAILED). | если задан `TELEGRAM_BOT_TOKEN` |
+---
 
-## Quick start
+## 🔧 Установка
 
+### 1. Устанавливаем Docker
 ```bash
-# 1. Клонировать репо в любое место на сервере
-git clone https://github.com/grandvan709/roscomvpn-geo-sync.git /opt/geo-mirror
-cd /opt/geo-mirror
-
-# 2. Скопировать шаблон конфига
-cp .env.example .env
-nano .env
-
-# 3. (если нужен rsync) Положить SSH-ключ к удалённому серверу
-cp /path/to/private-key ./ssh-key
-chmod 600 ./ssh-key
-
-# 4. Запустить
-docker compose up -d
-docker logs roscomvpn-geo-sync --tail 50
+sudo curl -fsSL https://get.docker.com | sh
 ```
 
-## Конфигурация
-
-Все настройки — в `.env`. См. подробные комментарии в [.env.example](.env.example).
-
-**Минимальный конфиг** (без rsync, без Remnawave, без Telegram):
-```ini
-CRON_SCHEDULE=0 */12 * * *
-TZ=UTC
-GEOIP_REPO=hydraponique/roscomvpn-geoip
-GEOSITE_REPO=hydraponique/roscomvpn-geosite
-ROUTING_REPO=hydraponique/roscomvpn-routing
-ROUTING_BRANCH=main
-ROUTING_CLIENTS=INCY,HAPP
-```
-В этом режиме скрипт качает geo-файлы в `./files/`, выводит deeplinks в логи (с оригинальными jsDelivr-URL'ами).
-
-## Setup rsync на удалённый сервер
-
-На удалённом сервере (тот, что будет раздавать `geo.example.com/*.dat`):
-
+### 2. Создаем папку `/opt/geo-mirror` и переходим в нее
 ```bash
-# 1. Создать директорию
-mkdir -p /opt/geo-mirror/files
-chown -R yourSshUser:yourSshUser /opt/geo-mirror
-
-# 2. Установить rsync и rrsync (restricted rsync wrapper)
-apt-get install rsync
-
-# 3. Добавить публичный ключ в authorized_keys с rrsync-ограничением
-echo 'command="/usr/bin/rrsync -wo /opt/geo-mirror/files/",no-port-forwarding,no-X11-forwarding,no-agent-forwarding,no-pty ssh-ed25519 AAAA... geo-sync@manager' >> ~yourSshUser/.ssh/authorized_keys
+sudo mkdir -p /opt/geo-mirror && cd /opt/geo-mirror
 ```
 
-Локально (на машине с контейнером):
+### 3. Скачиваем файлы `.env.example` (его сразу ренеймим в `.env`) и `docker-compose.yml`
 ```bash
-# Сгенерировать ключ
-ssh-keygen -t ed25519 -N '' -f ./ssh-key -C 'roscomvpn-geo-sync'
-# Публичную часть (./ssh-key.pub) добавьте в authorized_keys выше
-
-# В .env:
-RSYNC_HOST=geo.example.com
-RSYNC_USER=yourSshUser
-RSYNC_PORT=22
-RSYNC_REMOTE_DEST=./
-GEO_PUBLIC_URL=https://geo.example.com
+sudo wget -O .env https://raw.githubusercontent.com/grandvan709/roscomvpn-geo-sync/refs/heads/master/.env.example && \
+sudo wget -O docker-compose.yml https://raw.githubusercontent.com/grandvan709/roscomvpn-geo-sync/refs/heads/master/docker-compose.yml
 ```
 
-Затем на удалённом сервере настройте веб-сервер (Caddy / Nginx) для раздачи `/opt/geo-mirror/files/`. Пример Caddyfile:
+### 4. Заполняем файл `.env` необходимыми значениями (см раздел "Конфигурация")
+```bash
+sudo nano .env
+```
+
+### 5. (опционально, если используется rsync) Кладём приватный SSH-ключ
+```bash
+sudo cp /path/to/private-key /opt/geo-mirror/ssh-key
+sudo chmod 600 /opt/geo-mirror/ssh-key
+```
+
+> Если rsync не используется — закомментируйте строку `./ssh-key:/app/ssh-key:ro` в `docker-compose.yml`, иначе Docker создаст пустую директорию вместо файла и контейнер упадёт.
+
+## ⚙️ Конфигурация
+
+### Обязательные переменные
+
+<table>
+  <tr>
+    <th>Переменная</th>
+    <th>По умолчанию</th>
+    <th>Описание</th>
+  </tr>
+  <tr>
+    <td><code>GEOIP_REPO</code></td>
+    <td><code>hydraponique/roscomvpn-geoip</code></td>
+    <td>GitHub-репозиторий с релизами <code>geoip.dat</code></td>
+  </tr>
+  <tr>
+    <td><code>GEOSITE_REPO</code></td>
+    <td><code>hydraponique/roscomvpn-geosite</code></td>
+    <td>GitHub-репозиторий с релизами <code>geosite.dat</code></td>
+  </tr>
+  <tr>
+    <td><code>ROUTING_REPO</code></td>
+    <td><code>hydraponique/roscomvpn-routing</code></td>
+    <td>GitHub-репозиторий с <code>INCY/JSONSUB.JSON</code> и <code>HAPP/JSONSUB.JSON</code></td>
+  </tr>
+  <tr>
+    <td><code>ROUTING_BRANCH</code></td>
+    <td><code>main</code></td>
+    <td>Ветка репозитория, откуда тянуть JSONSUB</td>
+  </tr>
+  <tr>
+    <td><code>ROUTING_CLIENTS</code></td>
+    <td><code>INCY,HAPP</code></td>
+    <td>Клиенты, для которых строить deeplinks (через запятую). Поддерживается: <code>INCY</code>, <code>HAPP</code></td>
+  </tr>
+</table>
+
+### Опциональные переменные
+
+| Переменная | По умолчанию | Описание |
+|-----------|:----------:|---------|
+| `TZ` | `UTC` | Часовой пояс контейнера ([список](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones)) |
+| `CRON_SCHEDULE` | `0 */12 * * *` | Расписание cron (по умолчанию — каждые 12 часов) |
+| `GEOIP_MIN_SIZE` | `10000` | Минимальный размер `geoip.dat` (байт). Защита от обрезанных загрузок при fallback на jsDelivr |
+| `GEOSITE_MIN_SIZE` | `10000` | Минимальный размер `geosite.dat` (байт) |
+
+### rsync на удалённый сервер (опционально)
+
+Если эти переменные не заданы — geo-файлы сохраняются только в локальный кэш `./files/`, rsync пропускается.
+
+| Переменная | По умолчанию | Описание |
+|-----------|:----------:|---------|
+| `RSYNC_HOST` | — | Хост удалённого сервера раздачи |
+| `RSYNC_USER` | — | SSH-пользователь на удалённом сервере |
+| `RSYNC_PORT` | `22` | SSH-порт |
+| `RSYNC_REMOTE_DEST` | `./` | Целевая директория rsync. Для `rrsync`-restricted цели используйте `./` |
+| `SSH_KEY_PATH` | `/app/ssh-key` | Путь к SSH-ключу внутри контейнера (не менять, маунт через docker-compose) |
+| `GEO_PUBLIC_URL` | — | Публичный URL раздачи (например `https://geo.example.com`). Если задан — подставляется в JSONSUB и используется для health-check после rsync. Если НЕ задан — в JSONSUB остаются оригинальные URL'ы (`cdn.jsdelivr.net`) |
+
+### Push deeplinks в Remnawave-панель (опционально)
+
+Если `REMNAWAVE_API_URL` и `REMNAWAVE_API_TOKEN` не заданы оба — PATCH в панель пропускается, deeplinks выводятся только в логах (для ручного копирования в Response Rules / Happ Routing).
+
+| Переменная | По умолчанию | Описание |
+|-----------|:----------:|---------|
+| `REMNAWAVE_API_URL` | — | URL Remnawave-панели (без `/api`) |
+| `REMNAWAVE_API_TOKEN` | — | Bearer JWT API-токен (создаётся в Remnawave UI → Settings → API Keys) |
+| `REMNAWAVE_CADDY_TOKEN` | — | Опционально: `X-Api-Key` заголовок (если ваша панель за Caddy auth-portal требует его для `/api/*`) |
+| `INCY_RULE_NAME` | `INCY Routing` | Имя правила в Response Rules, содержащего header с key=`routing` для INCY-клиентов |
+
+### Telegram-уведомления (опционально)
+
+После каждого запуска бот отправляет итоговое сообщение со сводкой (✅ OK / ⚠️ used fallback / ❌ FAILED). Если переменные не заданы — Telegram-уведомления отключены, статус виден только в логах.
+
+| Переменная | Описание |
+|-----------|---------|
+| `TELEGRAM_BOT_TOKEN` | Токен бота (получить у [@BotFather](https://t.me/BotFather)) |
+| `TELEGRAM_CHAT_ID` | ID чата/группы (узнать через [@userinfobot](https://t.me/userinfobot) или [@getidsbot](https://t.me/getidsbot)) |
+| `TELEGRAM_THREAD_ID` | ID топика в супергруппе (опционально) |
+
+### Примеры CRON_SCHEDULE
+
+```env
+CRON_SCHEDULE='0 */12 * * *'     # каждые 12 часов (по умолчанию)
+CRON_SCHEDULE='0 */6 * * *'      # каждые 6 часов
+CRON_SCHEDULE='0 4 * * *'        # один раз в день в 04:00
+CRON_SCHEDULE='*/30 * * * *'     # каждые 30 минут (для тестов)
+CRON_SCHEDULE='0 0 * * 0'        # один раз в неделю в воскресенье
+```
+
+**Формат cron:** `минуты часы дни_месяца месяцы дни_недели`
+
+---
+
+## 🌐 Setup rsync на удалённый сервер раздачи
+
+На сервере, который будет раздавать `geo.example.com/*.dat`:
+
+### 1. Создать директорию для файлов
+```bash
+sudo mkdir -p /opt/geo-mirror/files
+sudo chown -R yourSshUser:yourSshUser /opt/geo-mirror
+```
+
+### 2. Установить `rsync` и `rrsync` (restricted rsync wrapper)
+```bash
+sudo apt-get install rsync
+```
+
+### 3. Сгенерировать SSH-ключ на сервере, где будет запускаться контейнер
+```bash
+ssh-keygen -t ed25519 -N '' -f /opt/geo-mirror/ssh-key -C 'roscomvpn-geo-sync'
+sudo chmod 600 /opt/geo-mirror/ssh-key
+```
+
+### 4. Добавить публичный ключ в `authorized_keys` на raздающем сервере (с `rrsync`-ограничением)
+```bash
+echo 'command="/usr/bin/rrsync -wo /opt/geo-mirror/files/",no-port-forwarding,no-X11-forwarding,no-agent-forwarding,no-pty <содержимое /opt/geo-mirror/ssh-key.pub>' >> ~yourSshUser/.ssh/authorized_keys
+```
+
+> `rrsync -wo` — write-only режим, ключ может только заливать файлы в одну директорию, никаких shell-команд.
+
+### 5. Настроить веб-сервер для раздачи. Пример Caddyfile
 ```caddy
 geo.example.com {
     root * /opt/geo-mirror/files
@@ -105,33 +197,85 @@ geo.example.com {
 }
 ```
 
-## Setup Remnawave integration
+### 6. В `.env` контейнера прописать соответствующие значения
+```env
+RSYNC_HOST=geo.example.com
+RSYNC_USER=yourSshUser
+RSYNC_PORT=22
+RSYNC_REMOTE_DEST=./
+GEO_PUBLIC_URL=https://geo.example.com
+```
 
-1. В Remnawave UI → Subscription → Settings → Response Rules — создайте правило:
-   - Name: `INCY Routing` (или другое, тогда укажите в `INCY_RULE_NAME`)
-   - Condition: `user-agent CONTAINS incy` (case-insensitive)
-   - Response type: `XRAY_JSON`
-   - Response modifications → headers: добавьте header с key `routing` и любым тестовым value (скрипт перепишет его).
-2. Создайте API token: Caddy auth-portal → API Keys → новый ключ с ролью `ADMIN` или `API`.
-3. В `.env`:
-   ```ini
-   REMNAWAVE_API_URL=https://your-panel.example.com
-   REMNAWAVE_API_TOKEN=<JWT bearer>
-   INCY_RULE_NAME=INCY Routing
-   ```
+---
 
-## Telegram alerts
+## 🔗 Setup Remnawave-интеграции (Phase 2b)
 
-1. Создайте бота через [@BotFather](https://t.me/BotFather).
-2. Добавьте бота в группу/канал с правами «Send messages».
-3. В `.env`:
-   ```ini
-   TELEGRAM_BOT_TOKEN=1234:AAA...
-   TELEGRAM_CHAT_ID=-1001234567890
-   TELEGRAM_THREAD_ID=42
-   ```
+### 1. В Remnawave-панели создать правило в Response Rules
 
-Формат сообщения:
+В UI Remnawave → **Subscription → Settings → Response Rules** — добавить правило:
+- **Name:** `INCY Routing` (или другое, тогда укажите в `INCY_RULE_NAME`)
+- **Condition:** `user-agent CONTAINS incy` (case-insensitive)
+- **Response type:** `XRAY_JSON`
+- **Response modifications → headers:** добавить header с key `routing` и любым тестовым value (скрипт перепишет его при первом запуске)
+
+### 2. Создать API-токен в Remnawave
+
+В UI Remnawave → **Settings → API Keys** → создать новый ключ с ролью `ADMIN` или `API`. Скопировать Bearer JWT.
+
+### 3. В `.env` контейнера прописать
+```env
+REMNAWAVE_API_URL=https://your-panel.example.com
+REMNAWAVE_API_TOKEN=eyJ...
+INCY_RULE_NAME=INCY Routing
+```
+
+> Поле **Happ Routing** в `Subscription → Settings → Announce & Routing` обновляется автоматически — отдельной настройки не требует.
+
+---
+
+## 🚀 Запуск
+
+### Первый запуск
+```bash
+cd /opt/geo-mirror && sudo docker compose up -d
+```
+
+### Проверка логов
+```bash
+cd /opt/geo-mirror && sudo docker compose logs -f -t
+```
+
+### Остановка
+```bash
+cd /opt/geo-mirror && sudo docker compose down
+```
+
+### Перезагрузка
+```bash
+cd /opt/geo-mirror && sudo docker compose down && sudo docker compose up -d
+```
+
+---
+
+## 📊 Структура логов
+
+```
+2026-05-13 04:39:32,904 [INFO] === geo-sync run start ===
+2026-05-13 04:39:33,565 [INFO] HTTP Request: GET https://api.github.com/repos/hydraponique/roscomvpn-geoip/releases/latest "HTTP/1.1 200 OK"
+2026-05-13 04:39:34,422 [INFO] HTTP Request: GET .../releases/download/202605120620/geoip.dat "HTTP/1.1 302 Found"
+2026-05-13 04:39:39,679 [INFO] HTTP Request: GET https://raw.githubusercontent.com/hydraponique/roscomvpn-routing/main/INCY/JSONSUB.JSON "HTTP/1.1 200 OK"
+2026-05-13 04:39:39,681 [INFO] INCY Routing: ://routing/onadd/eyJOYW1lIjoiUm9zY29tVlBOIEpTT04i...
+2026-05-13 04:39:40,129 [INFO] HTTP Request: GET https://raw.githubusercontent.com/hydraponique/roscomvpn-routing/main/HAPP/JSONSUB.JSON "HTTP/1.1 200 OK"
+2026-05-13 04:39:40,129 [INFO] Happ Routing: happ://routing/onadd/eyJOYW1lIjoiUm9zY29tVlBOIEpTT04i...
+2026-05-13 04:39:40,129 [INFO] === geo-sync run done: OK ===
+
+Schedule: 0 */12 * * *
+Switching to periodic mode...
+==========================================
+```
+
+### Пример Telegram-сообщения
+
 ```
 ✅ roscomvpn-geo-sync — OK
 geoip.dat: ⬆ updated [github:202605120620, 407.0KiB]
@@ -142,24 +286,44 @@ routing-HAPP: ⬆ updated
 Routing applied to Remnawave: INCY + HAPP
 ```
 
-## Архитектура
+> Сам deeplink (длинная base64-строка) в Telegram **не вставляется** — он только в логах контейнера. Это снижает шум в чате.
 
-```
-┌──────────────────────────────────────┐
-│ Container: roscomvpn-geo-sync         │
-│ cron: CRON_SCHEDULE                   │
-│                                       │
-│ Phase 1a: download geo (GitHub+jsD)   │
-│ Phase 1b: rsync (optional)            │
-│ Phase 2a: build deeplinks → logs      │
-│ Phase 2b: PATCH Remnawave (optional)  │
-│ Telegram summary (optional)           │
-└──────────────────────────────────────┘
-       │           │           │
-   geo source  remote     Remnawave API
-   (github)    (rsync)    (panel)
+---
+
+## 💡 Обновление ПО
+
+### 1. Переходим в нашу папку
+```bash
+cd /opt/geo-mirror
 ```
 
-## License
+### 2. Останавливаем контейнер
+```bash
+sudo docker compose down
+```
 
-Apache License 2.0
+### 3. Скачиваем новый образ
+```bash
+sudo docker compose pull
+```
+
+### 4. Запускаем контейнер и смотрим логи после запуска новой версии
+```bash
+sudo docker compose up -d && sudo docker compose logs -f -t
+```
+
+### 5. Проверка docker-compose.yml и прочих файлов
+Перед обновлениями и запусками — убедитесь, что ваши файлы **docker-compose.yml** и **.env** *(и прочие, которые могут быть в будущем)* соответствуют последним версиям из репозитория!
+
+> Чтобы не писать `sudo` перед каждой командой `docker` — нужно внести пользователя, из под которого вы работаете, в группу **docker** следующей командой: `sudo usermod -aG docker <username>`. А затем перезайти на сервер.
+---
+
+> **Ставь ⭐** и не пропусти регулярные обновления для поддержания актуальности скрипта и оптимальной автоматизации
+
+> USDT TRC20: TL6gHETnKqNWV4D6GjiKKahkBsAwcyWfo8
+
+<p align=center>
+    <a href="https://t.me/grand_van" target="_blank" rel="noopener noreferrer">
+        <img src="https://img.shields.io/badge/Telegram-GrandVan-purple?logo=telegram&logoColor=white&labelColor=blue" alt="Chat me on Telegram">
+    </a>
+</p>
