@@ -1,0 +1,13 @@
+services:
+  roscomvpn-geo-sync:
+    container_name: roscomvpn-geo-sync
+    hostname: roscomvpn-geo-sync
+    image: grandvan/roscomvpn-geo-sync:latest
+    restart: always
+    volumes:
+      - ./.env:/app/.env:ro
+      - ./files:/app/files
+      - ./logs:/app/logs
+      - ./ssh-key:/app/ssh-key:ro
+    environment:
+      - PYTHONUNBUFFERED=1
