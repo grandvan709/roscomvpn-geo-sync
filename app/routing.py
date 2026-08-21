@@ -148,6 +148,28 @@ class RoutingUpdater:
             payload["responseRules"] = response_rules
 
         if "HAPP" in prepared:
-            payload["happRouting"] = prepared["HAPP"][0]
+            payload.update(self._happ_payload(settings, prepared["HAPP"][0]))
 
         self.remnawave.patch_subscription_settings(payload)
+
+    @staticmethod
+    def _happ_payload(settings: dict, deeplink: str) -> dict:
+        """Куда класть Happ-deeplink — зависит от мажорной версии панели.
+
+        Remnawave < 3.0.0 держал его в отдельном поле `happRouting`. В 3.0.0 поле
+        удалено, а его значение мигрировано в кастомный заголовок ответа `routing`
+        внутри `customResponseHeaders` (заодно заголовок теперь уходит всем клиентам,
+        а не только Happ — фильтр по User-Agent убран на стороне панели).
+
+        Различаем по факту наличия ключа в ответе GET, а не по номеру версии:
+        панель версию в этом ответе не отдаёт, а ключ — надёжный признак.
+        """
+        if "happRouting" in settings:
+            return {"happRouting": deeplink}
+
+        # Патчим карту целиком: PATCH заменяет объект, а не мержит его,
+        # поэтому чужие заголовки (profile-title, announce, support-url, ...)
+        # обязаны уехать обратно вместе с нашим.
+        headers = dict(settings.get("customResponseHeaders") or {})
+        headers["routing"] = deeplink
+        return {"customResponseHeaders": headers}
