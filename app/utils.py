@@ -3,6 +3,9 @@ import logging
 import os
 from pathlib import Path
 
+import httpx
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
+
 
 def setup_logging(log_file: Path | None = None):
     handlers = [logging.StreamHandler()]
@@ -44,3 +47,30 @@ def atomic_write(path: Path, data: bytes):
     with open(tmp, "wb") as f:
         f.write(data)
     os.replace(tmp, path)
+
+
+def _log_retry(state) -> None:
+    exc = state.outcome.exception() if state.outcome else None
+    logging.warning(
+        f"сетевой сбой, повтор {state.attempt_number} через "
+        f"{state.next_action.sleep:.0f}с: {type(exc).__name__}: {exc}"
+    )
+
+
+def http_retry(attempts: int = 3):
+    """Повтор сетевых сбоев httpx: обрыв соединения, таймаут, зависший TLS-хендшейк.
+
+    Ретраится только `httpx.TransportError` — то есть транспорт. HTTP-статусы сюда
+    не попадают: `raise_for_status()` поднимает `HTTPStatusError`, который к
+    TransportError не относится, и повторять 404 смысла нет.
+
+    Зачем: аплинк manager'а изредка роняет исходящий TLS на хендшейке (~1% прогонов,
+    наблюдается с июля). Без повтора один такой чих валит весь прогон в FAILED.
+    """
+    return retry(
+        stop=stop_after_attempt(attempts),
+        wait=wait_exponential(min=2, max=10),
+        retry=retry_if_exception_type(httpx.TransportError),
+        reraise=True,
+        before_sleep=_log_retry,
+    )

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import httpx
 
-from utils import atomic_write, sha256_bytes, sha256_file
+from utils import atomic_write, http_retry, sha256_bytes, sha256_file
 from remnawave import RemnawaveClient
 
 
@@ -56,6 +56,7 @@ class RoutingUpdater:
         self.remnawave = remnawave
         self.incy_rule_name = incy_rule_name
 
+    @http_retry()
     def _fetch_jsonsub(self, client_type: str) -> dict:
         url = f"https://raw.githubusercontent.com/{self.repo}/{self.branch}/{client_type}/JSONSUB.JSON"
         r = httpx.get(url, timeout=30, follow_redirects=True)

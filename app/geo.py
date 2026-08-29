@@ -1,3 +1,4 @@
+import json
 import logging
 import re
 from dataclasses import dataclass
@@ -5,7 +6,7 @@ from pathlib import Path
 
 import httpx
 
-from utils import atomic_write, sha256_bytes, sha256_file
+from utils import atomic_write, http_retry, sha256_bytes, sha256_file
 
 
 @dataclass
@@ -23,6 +24,7 @@ class GeoFetcher:
         self.files_dir = files_dir
         self.files_dir.mkdir(parents=True, exist_ok=True)
 
+    @http_retry()
     def _http_get(self, url: str, timeout: int = 120) -> bytes:
         with httpx.Client(follow_redirects=True, timeout=timeout) as client:
             r = client.get(url)
@@ -31,7 +33,7 @@ class GeoFetcher:
 
     def _fetch_github_release(self, repo: str, filename: str) -> tuple[bytes, str]:
         api_url = f"https://api.github.com/repos/{repo}/releases/latest"
-        meta = httpx.get(api_url, timeout=30).json()
+        meta = json.loads(self._http_get(api_url, timeout=30))
         tag = meta.get("tag_name") or ""
         if not tag:
             raise ValueError("no tag_name in release")
