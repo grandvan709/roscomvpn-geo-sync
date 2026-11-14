@@ -1,5 +1,6 @@
 import os
 import time
+from pathlib import Path
 
 from dotenv import load_dotenv
 
@@ -15,13 +16,13 @@ if TZ:
 
 CRON_SCHEDULE = os.getenv("CRON_SCHEDULE", "0 */12 * * *")
 
-GEOIP_REPO = os.getenv("GEOIP_REPO", "hydraponique/roscomvpn-geoip")
-GEOSITE_REPO = os.getenv("GEOSITE_REPO", "hydraponique/roscomvpn-geosite")
-GEOIP_MIN_SIZE = int(os.getenv("GEOIP_MIN_SIZE", "10000"))
-GEOSITE_MIN_SIZE = int(os.getenv("GEOSITE_MIN_SIZE", "10000"))
+GEO_REPO = os.getenv("GEO_REPO", "Loyalsoldier/v2ray-rules-dat")
+GEOIP_REPO = os.getenv("GEOIP_REPO") or GEO_REPO
+GEOSITE_REPO = os.getenv("GEOSITE_REPO") or GEO_REPO
+GEOIP_MIN_SIZE = int(os.getenv("GEOIP_MIN_SIZE", "100000"))
+GEOSITE_MIN_SIZE = int(os.getenv("GEOSITE_MIN_SIZE", "100000"))
 
-ROUTING_REPO = os.getenv("ROUTING_REPO", "hydraponique/roscomvpn-routing")
-ROUTING_BRANCH = os.getenv("ROUTING_BRANCH", "main")
+ROUTING_CONFIG_PATH = os.getenv("ROUTING_CONFIG_PATH", "/app/configs/GRANDNET.JSON")
 ROUTING_CLIENTS = [c.strip().upper() for c in os.getenv("ROUTING_CLIENTS", "INCY,HAPP").split(",") if c.strip()]
 
 RSYNC_HOST = os.getenv("RSYNC_HOST") or None
@@ -54,9 +55,11 @@ def validate_config():
     if not CRON_SCHEDULE:
         raise ValueError("CRON_SCHEDULE is required")
     if not GEOIP_REPO or not GEOSITE_REPO:
-        raise ValueError("GEOIP_REPO and GEOSITE_REPO are required")
-    if not ROUTING_REPO or not ROUTING_BRANCH:
-        raise ValueError("ROUTING_REPO and ROUTING_BRANCH are required")
+        raise ValueError("GEO_REPO (or GEOIP_REPO/GEOSITE_REPO) is required")
+    if not ROUTING_CONFIG_PATH:
+        raise ValueError("ROUTING_CONFIG_PATH is required")
+    if not Path(ROUTING_CONFIG_PATH).is_file():
+        raise ValueError(f"ROUTING_CONFIG_PATH not found: {ROUTING_CONFIG_PATH}")
     if not ROUTING_CLIENTS:
         raise ValueError("ROUTING_CLIENTS must contain at least one client")
     for c in ROUTING_CLIENTS:

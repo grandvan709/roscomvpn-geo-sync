@@ -1,0 +1,23 @@
+{
+  "Name": "GrandNet Routing",
+  "GlobalProxy": "true",
+  "RouteOrder": "block-direct-proxy",
+  "DomainStrategy": "IPIfNonMatch",
+  "RemoteDNSDomain": "https://cloudflare-dns.com/dns-query",
+  "RemoteDNSIP": "1.1.1.1",
+  "RemoteDNSType": "DoH",
+  "DomesticDNSDomain": "https://common.dot.dns.yandex.net",
+  "DomesticDNSIP": "77.88.8.8",
+  "DomesticDNSType": "DoH",
+  "Geoipurl": "https://geo.grandvanet.com/geoip.dat",
+  "Geositeurl": "https://geo.grandvanet.com/geosite.dat",
+  "DnsHosts": {
+    "cloudflare-dns.com": "1.1.1.1",
+    "dns.google": "8.8.8.8"
+  },
+  "FakeDNS": false,
+  "BlockSites": [],
+  "DirectIp": [],
+  "DirectSites": [],
+  "ProxySites": []
+}
