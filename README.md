@@ -1,6 +1,6 @@
 <h1 align=center>Авто-зеркало <code>geoip.dat</code> / <code>geosite.dat</code> + авто-обновление routing-deeplinks в <code>Remnawave</code></h1>
 
-> **Собственное зеркало** geo-файлов от [hydraponique/roscomvpn-*](https://github.com/hydraponique) для VPN-инфры на Xray-ядре (INCY, Happ) и **автоматическое обновление** routing-deeplinks в Remnawave-панели через API
+> **Собственное зеркало** geo-файлов от [Loyalsoldier/v2ray-rules-dat](https://github.com/Loyalsoldier/v2ray-rules-dat) для VPN-инфры на Xray-ядре (INCY, Happ) и **автоматическое обновление** routing-deeplinks в Remnawave-панели через API. Профиль маршрутизации — **свой**, в `configs/GRANDNET.JSON`.
 
 <p align=center>Данный репозиторий был создан и поддерживается в связи с тем, что <b>Роскомнадзор</b> начал блокировать GitHub и его CDN. VPN-клиенты на Xray-ядре (INCY, Happ) используют geo-файлы для split-tunneling — без них маршрутизация ломается. Этот сервис позволяет раздавать geo-файлы с собственного домена и автоматически обновлять routing-deeplinks в Remnawave-панели.</p>
 
@@ -8,12 +8,12 @@
 
 ## 🚀 Возможности
 
-- ✅ Скачивание `geoip.dat` и `geosite.dat` с GitHub Releases и проверкой sha256
-- ✅ Fallback на jsDelivr с проверкой размера и magic byte при недоступности GitHub
+- ✅ Скачивание `geoip.dat` и `geosite.dat` с GitHub Releases и проверкой sha256 (`.sha256sum` или `.sha256`)
+- ✅ Fallback на `releases/latest/download` с проверкой размера и magic byte при недоступности GitHub API
 - ✅ Атомарная замена локального кэша (старая версия не теряется при сбое)
 - ✅ Загрузка свежих файлов на удалённый сервер раздачи через rsync (опционально)
 - ✅ Health-check публичного URL раздачи после rsync (опционально)
-- ✅ Автоматическая генерация routing-deeplinks для INCY и Happ из upstream `JSONSUB.JSON`
+- ✅ Автоматическая генерация routing-deeplinks для INCY и Happ из собственного профиля `configs/GRANDNET.JSON`
 - ✅ Автоматический PATCH `/api/subscription-settings` в Remnawave: правило INCY Routing + поле Happ Routing (опционально)
 - ✅ Вывод готовых deeplinks в логи — для ручной вставки в панель если автоматизация отключена
 - ✅ Telegram-уведомления о результатах каждого запуска (✅ OK / ⚠️ used fallback / ❌ FAILED)
@@ -73,24 +73,24 @@ sudo chmod 600 /opt/geo-mirror/ssh-key
     <th>Описание</th>
   </tr>
   <tr>
+    <td><code>GEO_REPO</code></td>
+    <td><code>Loyalsoldier/v2ray-rules-dat</code></td>
+    <td>GitHub-репозиторий с релизами <code>geoip.dat</code> и <code>geosite.dat</code></td>
+  </tr>
+  <tr>
     <td><code>GEOIP_REPO</code></td>
-    <td><code>hydraponique/roscomvpn-geoip</code></td>
-    <td>GitHub-репозиторий с релизами <code>geoip.dat</code></td>
+    <td><code>GEO_REPO</code></td>
+    <td>Опционально: отдельный репозиторий для <code>geoip.dat</code></td>
   </tr>
   <tr>
     <td><code>GEOSITE_REPO</code></td>
-    <td><code>hydraponique/roscomvpn-geosite</code></td>
-    <td>GitHub-репозиторий с релизами <code>geosite.dat</code></td>
+    <td><code>GEO_REPO</code></td>
+    <td>Опционально: отдельный репозиторий для <code>geosite.dat</code></td>
   </tr>
   <tr>
-    <td><code>ROUTING_REPO</code></td>
-    <td><code>hydraponique/roscomvpn-routing</code></td>
-    <td>GitHub-репозиторий с <code>INCY/JSONSUB.JSON</code> и <code>HAPP/JSONSUB.JSON</code></td>
-  </tr>
-  <tr>
-    <td><code>ROUTING_BRANCH</code></td>
-    <td><code>main</code></td>
-    <td>Ветка репозитория, откуда тянуть JSONSUB</td>
+    <td><code>ROUTING_CONFIG_PATH</code></td>
+    <td><code>/app/configs/GRANDNET.JSON</code></td>
+    <td>Локальный профиль маршрутизации (копируется в образ из <code>configs/</code>)</td>
   </tr>
   <tr>
     <td><code>ROUTING_CLIENTS</code></td>
@@ -105,8 +105,8 @@ sudo chmod 600 /opt/geo-mirror/ssh-key
 |-----------|:----------:|---------|
 | `TZ` | `UTC` | Часовой пояс контейнера ([список](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones)) |
 | `CRON_SCHEDULE` | `0 */12 * * *` | Расписание cron (по умолчанию — каждые 12 часов) |
-| `GEOIP_MIN_SIZE` | `10000` | Минимальный размер `geoip.dat` (байт). Защита от обрезанных загрузок при fallback на jsDelivr |
-| `GEOSITE_MIN_SIZE` | `10000` | Минимальный размер `geosite.dat` (байт) |
+| `GEOIP_MIN_SIZE` | `100000` | Минимальный размер `geoip.dat` (байт). Защита от обрезанных загрузок |
+| `GEOSITE_MIN_SIZE` | `100000` | Минимальный размер `geosite.dat` (байт) |
 
 ### rsync на удалённый сервер (опционально)
 
@@ -119,7 +119,7 @@ sudo chmod 600 /opt/geo-mirror/ssh-key
 | `RSYNC_PORT` | `22` | SSH-порт |
 | `RSYNC_REMOTE_DEST` | `./` | Целевая директория rsync. Для `rrsync`-restricted цели используйте `./` |
 | `SSH_KEY_PATH` | `/app/ssh-key` | Путь к SSH-ключу внутри контейнера (не менять, маунт через docker-compose) |
-| `GEO_PUBLIC_URL` | — | Публичный URL раздачи (например `https://geo.example.com`). Если задан — подставляется в JSONSUB и используется для health-check после rsync. Если НЕ задан — в JSONSUB остаются оригинальные URL'ы (`cdn.jsdelivr.net`) |
+| `GEO_PUBLIC_URL` | — | Публичный URL раздачи (например `https://geo.example.com`). Если задан — подставляется в routing-профиль как `Geoipurl`/`Geositeurl` и используется для health-check после rsync. Если НЕ задан — используются URL'ы из `configs/GRANDNET.JSON` |
 
 ### Push deeplinks в Remnawave-панель (опционально)
 
@@ -260,14 +260,13 @@ cd /opt/geo-mirror && sudo docker compose down && sudo docker compose up -d
 ## 📊 Структура логов
 
 ```
-2026-05-13 04:39:32,904 [INFO] === geo-sync run start ===
-2026-05-13 04:39:33,565 [INFO] HTTP Request: GET https://api.github.com/repos/hydraponique/roscomvpn-geoip/releases/latest "HTTP/1.1 200 OK"
-2026-05-13 04:39:34,422 [INFO] HTTP Request: GET .../releases/download/202605120620/geoip.dat "HTTP/1.1 302 Found"
-2026-05-13 04:39:39,679 [INFO] HTTP Request: GET https://raw.githubusercontent.com/hydraponique/roscomvpn-routing/main/INCY/JSONSUB.JSON "HTTP/1.1 200 OK"
-2026-05-13 04:39:39,681 [INFO] INCY Routing: ://routing/onadd/eyJOYW1lIjoiUm9zY29tVlBOIEpTT04i...
-2026-05-13 04:39:40,129 [INFO] HTTP Request: GET https://raw.githubusercontent.com/hydraponique/roscomvpn-routing/main/HAPP/JSONSUB.JSON "HTTP/1.1 200 OK"
-2026-05-13 04:39:40,129 [INFO] Happ Routing: happ://routing/onadd/eyJOYW1lIjoiUm9zY29tVlBOIEpTT04i...
-2026-05-13 04:39:40,129 [INFO] === geo-sync run done: OK ===
+2026-11-14 04:39:32,904 [INFO] === geo-sync run start ===
+2026-11-14 04:39:33,565 [INFO] HTTP Request: GET https://api.github.com/repos/Loyalsoldier/v2ray-rules-dat/releases/latest "HTTP/1.1 200 OK"
+2026-11-14 04:39:34,422 [INFO] HTTP Request: GET .../releases/download/202611132203/geoip.dat "HTTP/1.1 200 OK"
+2026-11-14 04:39:36,679 [INFO] [geoip.dat] sha256 OK
+2026-11-14 04:39:39,679 [INFO] INCY Routing: ://routing/onadd/eyJOYW1lIjoiR3JhbmROZXQgUm91dGluZyIsIkdsb2JhbFByb3h5Ijoi...
+2026-11-14 04:39:40,129 [INFO] Happ Routing: happ://routing/onadd/eyJOYW1lIjoiR3JhbmROZXQgUm91dGluZyIsIkdsb2JhbFByb3h5Ijoi...
+2026-11-14 04:39:40,129 [INFO] === geo-sync run done: OK ===
 
 Schedule: 0 */12 * * *
 Switching to periodic mode...

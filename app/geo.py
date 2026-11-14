@@ -31,36 +31,44 @@ class GeoFetcher:
             r.raise_for_status()
             return r.content
 
-    def _fetch_github_release(self, repo: str, filename: str) -> tuple[bytes, str]:
+    def _fetch_github_release(self, repo: str, filename: str, min_size: int) -> tuple[bytes, str]:
         api_url = f"https://api.github.com/repos/{repo}/releases/latest"
         meta = json.loads(self._http_get(api_url, timeout=30))
         tag = meta.get("tag_name") or ""
         if not tag:
             raise ValueError("no tag_name in release")
-        assets = meta.get("assets") or []
-        dat_url = next((a["browser_download_url"] for a in assets if a.get("name") == filename), None)
-        sha_url = next((a["browser_download_url"] for a in assets if a.get("name") == filename + ".sha256"), None)
-        if not dat_url or not sha_url:
-            raise ValueError(f"missing .dat or .sha256 asset for {filename} in release {tag}")
+        assets = {a.get("name"): a for a in meta.get("assets") or []}
+        dat_asset = assets.get(filename)
+        if not dat_asset:
+            raise ValueError(f"missing {filename} asset in release {tag}")
+        sha_url = None
+        for suffix in (".sha256sum", ".sha256"):
+            asset = assets.get(filename + suffix)
+            if asset:
+                sha_url = asset["browser_download_url"]
+                break
 
-        dat = self._http_get(dat_url, timeout=120)
-        sha_blob = self._http_get(sha_url, timeout=30).decode("ascii", errors="replace")
-        expected = (sha_blob.split() or [""])[0].strip().lower()
-        if not re.fullmatch(r"[0-9a-f]{64}", expected):
-            raise ValueError(f".sha256 invalid content: {expected!r}")
-        actual = sha256_bytes(dat)
-        if actual != expected:
-            raise ValueError(f"sha256 mismatch (expected {expected}, got {actual})")
+        dat = self._http_get(dat_asset["browser_download_url"], timeout=180)
+        if len(dat) < min_size:
+            raise ValueError(f"file too small: {len(dat)} (min {min_size})")
+        if sha_url:
+            sha_blob = self._http_get(sha_url, timeout=30).decode("ascii", errors="replace")
+            expected = (sha_blob.split() or [""])[0].strip().lower()
+            if not re.fullmatch(r"[0-9a-f]{64}", expected):
+                raise ValueError(f"sha256 asset invalid content: {expected!r}")
+            actual = sha256_bytes(dat)
+            if actual != expected:
+                raise ValueError(f"sha256 mismatch (expected {expected}, got {actual})")
         return dat, f"github:{tag}"
 
-    def _fetch_jsdelivr(self, repo: str, filename: str, min_size: int) -> tuple[bytes, str]:
-        url = f"https://cdn.jsdelivr.net/gh/{repo}/release/{filename}"
-        dat = self._http_get(url, timeout=120)
+    def _fetch_latest_asset(self, repo: str, filename: str, min_size: int) -> tuple[bytes, str]:
+        url = f"https://github.com/{repo}/releases/latest/download/{filename}"
+        dat = self._http_get(url, timeout=180)
         if len(dat) < min_size:
             raise ValueError(f"file too small: {len(dat)} (min {min_size})")
         if not dat or dat[0] != 0x0a:
             raise ValueError(f"unexpected magic byte: {dat[:1].hex()}")
-        return dat, "jsdelivr"
+        return dat, "github:latest (fallback)"
 
     def process_file(self, repo: str, filename: str, min_size: int) -> FileResult:
         local = self.files_dir / filename
@@ -68,12 +76,11 @@ class GeoFetcher:
         source = ""
 
         try:
-            dat, source = self._fetch_github_release(repo, filename)
+            dat, source = self._fetch_github_release(repo, filename, min_size)
         except Exception as e:
-            logging.warning(f"[{filename}] GitHub Releases failed: {e}; trying jsDelivr")
+            logging.warning(f"[{filename}] GitHub Releases failed: {e}; trying releases/latest/download")
             try:
-                dat, source = self._fetch_jsdelivr(repo, filename, min_size)
-                source = f"{source} (fallback)"
+                dat, source = self._fetch_latest_asset(repo, filename, min_size)
                 used_fallback = True
             except Exception as e2:
                 return FileResult(filename, "failed", "-", 0, False, str(e2))

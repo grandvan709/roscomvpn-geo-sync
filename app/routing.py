@@ -4,9 +4,7 @@ import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 
-import httpx
-
-from utils import atomic_write, http_retry, sha256_bytes, sha256_file
+from utils import atomic_write, sha256_bytes, sha256_file
 from remnawave import RemnawaveClient
 
 
@@ -41,27 +39,26 @@ class RoutingUpdater:
     def __init__(
         self,
         files_dir: Path,
-        routing_repo: str,
-        routing_branch: str,
+        config_path: str,
         clients: list[str],
         geo_public_url: str | None,
         remnawave: RemnawaveClient | None,
         incy_rule_name: str,
+        geo_updated_at: int | None = None,
     ):
         self.files_dir = files_dir
-        self.repo = routing_repo
-        self.branch = routing_branch
+        self.config_path = Path(config_path)
         self.clients = clients
         self.geo_public_url = geo_public_url
         self.remnawave = remnawave
         self.incy_rule_name = incy_rule_name
+        self.geo_updated_at = geo_updated_at
 
-    @http_retry()
-    def _fetch_jsonsub(self, client_type: str) -> dict:
-        url = f"https://raw.githubusercontent.com/{self.repo}/{self.branch}/{client_type}/JSONSUB.JSON"
-        r = httpx.get(url, timeout=30, follow_redirects=True)
-        r.raise_for_status()
-        return r.json()
+    def _load_config(self) -> dict:
+        data = json.loads(self.config_path.read_text(encoding="utf-8"))
+        if self.geo_updated_at and "LastUpdated" not in data:
+            data["LastUpdated"] = str(self.geo_updated_at)
+        return data
 
     def _replace_urls(self, data: dict) -> dict:
         if self.geo_public_url:
@@ -81,14 +78,16 @@ class RoutingUpdater:
         result = RoutingResult()
         prepared: dict[str, tuple[str, bytes, Path]] = {}
 
-        for client_type in self.clients:
-            try:
-                data = self._fetch_jsonsub(client_type)
-            except Exception as e:
+        try:
+            base = self._load_config()
+        except Exception as e:
+            logging.error(f"routing config load failed: {e}")
+            for client_type in self.clients:
                 result.clients.append(RoutingClientResult(client_type, "failed", error=str(e)))
-                continue
+            return result
 
-            data = self._replace_urls(data)
+        for client_type in self.clients:
+            data = self._replace_urls(json.loads(json.dumps(base)))
             serialized = self._serialize(data)
             cache_path = self.files_dir / f"routing-{client_type}.json"
             new_hash = sha256_bytes(serialized)

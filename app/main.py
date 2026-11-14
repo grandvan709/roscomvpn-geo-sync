@@ -40,7 +40,7 @@ class SyncManager:
             else:
                 icon = "⬆" if r.status == "updated" else "✓"
                 if r.used_fallback:
-                    warnings.append(f"[{r.filename}] jsDelivr fallback")
+                    warnings.append(f"[{r.filename}] fallback source")
                 status_lines.append(f"<code>{r.filename}</code>: {icon} {r.status} [{r.source}, {human_size(r.size)}]")
 
         updated_files = [self.files_dir / r.filename for r in (geoip_res, geosite_res) if r.status == "updated"]
@@ -65,14 +65,17 @@ class SyncManager:
                 config.REMNAWAVE_CADDY_TOKEN,
             )
         try:
+            geo_files = [self.files_dir / "geoip.dat", self.files_dir / "geosite.dat"]
+            existing = [p.stat().st_mtime for p in geo_files if p.exists()]
+            geo_updated_at = int(max(existing)) if existing else None
             routing = RoutingUpdater(
                 self.files_dir,
-                config.ROUTING_REPO,
-                config.ROUTING_BRANCH,
+                config.ROUTING_CONFIG_PATH,
                 config.ROUTING_CLIENTS,
                 config.GEO_PUBLIC_URL,
                 remnawave,
                 config.INCY_RULE_NAME,
+                geo_updated_at,
             )
             routing_result = routing.process()
         finally:
